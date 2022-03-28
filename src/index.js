@@ -14,17 +14,18 @@ import { readFile } from 'fs/promises';
 import { resolve } from 'path';
 import ejs from 'ejs';
 import mime from 'mime';
-import { FSCachePlugin, OneDrive } from '@adobe/helix-onedrive-support';
+import { decodeJwt } from 'jose';
+import {
+  FSCachePlugin, MemCachePlugin, S3CachePlugin, OneDrive, OneDriveAuth,
+} from '@adobe/helix-onedrive-support';
 import { google } from 'googleapis';
 import wrap from '@adobe/helix-shared-wrap';
 import bodyData from '@adobe/helix-shared-body-data';
 import { logger } from '@adobe/helix-universal-logger';
 import { wrap as status } from '@adobe/helix-status';
 import { Response } from '@adobe/helix-fetch';
-import MemCachePlugin from './MemCachePlugin.js';
 import pkgJson from './package.cjs';
 import fetchFstab from './fetch-fstab.js';
-import S3CachePlugin from './S3CachePlugin.js';
 import GoogleClient from './GoogleClient.js';
 
 const ROOT_PATH = '/register';
@@ -69,32 +70,38 @@ async function render(name, data) {
  * @param context
  * @returns {OneDrive}
  */
-function getOneDriveClient(context, opts) {
+async function getOneDriveClient(context, opts) {
   if (!context.od) {
     const { log, env } = context;
     const { owner, repo, contentBusId } = opts;
     const {
       AZURE_WORD2MD_CLIENT_ID: clientId,
       AZURE_WORD2MD_CLIENT_SECRET: clientSecret,
-      AZURE_WORD2MD_TENANT: tenant = 'fa7b1b5a-7b34-4387-94ae-d2c178decee1',
     } = env;
 
     const key = `${contentBusId}/.helix-auth`;
     const base = process.env.AWS_EXECUTION_ENV
-      ? new S3CachePlugin(context, { key, secret: contentBusId })
-      : new FSCachePlugin(`.auth-${contentBusId}--${owner}--${repo}.json`).withLogger(log);
-    const plugin = new MemCachePlugin(context, { key, base });
+      ? new S3CachePlugin({
+        log, key, secret: contentBusId, bucket: 'helix-content-bus',
+      })
+      : new FSCachePlugin({ log, filePath: `.auth-${contentBusId}--${owner}--${repo}.json` });
+    const cachePlugin = new MemCachePlugin({ log, key, base });
 
     context.od = new OneDrive({
-      clientId,
-      tenant,
-      clientSecret,
-      log,
-      localAuthCache: {
-        plugin,
-      },
+      auth: new OneDriveAuth({
+        log,
+        clientId,
+        clientSecret,
+        cachePlugin,
+      }),
     });
+
+    // init tenant via mountpoint url
+    await context.od.auth.initTenantFromUrl(opts.mp.url);
   }
+  // this is a bit a hack
+  // eslint-disable-next-line no-param-reassign
+  opts.tenantId = context.od.auth.tenant;
   return context.od;
 }
 
@@ -121,10 +128,12 @@ async function getGoogleClient(req, context, opts) {
 
     const key = `${contentBusId}/.helix-auth`;
     const base = process.env.AWS_EXECUTION_ENV
-      ? new S3CachePlugin(context, { key, secret: contentBusId })
-      : new FSCachePlugin(`.auth-${contentBusId}--${owner}--${repo}.json`).withLogger(log);
+      ? new S3CachePlugin({
+        log, key, secret: contentBusId, bucket: 'helix-content-bus',
+      })
+      : new FSCachePlugin({ log, filePath: `.auth-${contentBusId}--${owner}--${repo}.json` });
 
-    const plugin = new MemCachePlugin(context, { key, base });
+    const plugin = new MemCachePlugin({ log, key, base });
     context.gc = await new GoogleClient({
       log,
       contentBusId,
@@ -178,6 +187,7 @@ async function getProjectInfo(request, ctx, { owner, repo }) {
     mp,
     contentBusId,
     githubUrl,
+    tenantId: '',
     error,
     version: pkgJson.version,
     links: {
@@ -235,8 +245,8 @@ async function run(request, context) {
     if (!info.error) {
       try {
         if (type === 'a') {
-          const od = getOneDriveClient(context, info);
-          await od.app.acquireTokenByCode({
+          const od = await getOneDriveClient(context, info);
+          await od.auth.app.acquireTokenByCode({
             code,
             scopes: AZURE_SCOPES,
             redirectUri: getRedirectUrl(request, context, '/token'),
@@ -276,8 +286,8 @@ async function run(request, context) {
     if (!info.error) {
       try {
         if (info.mp.type === 'onedrive') {
-          const od = getOneDriveClient(context, info);
-          const cache = od.app.getTokenCache();
+          const od = await getOneDriveClient(context, info);
+          const cache = od.auth.app.getTokenCache();
           await Promise.all((await cache.getAllAccounts())
             .map(async (acc) => cache.removeAccount(acc)));
         } else if (info.mp.type === 'google') {
@@ -310,16 +320,18 @@ async function run(request, context) {
     if (!info.error) {
       try {
         if (info.mp.type === 'onedrive') {
-          const od = getOneDriveClient(context, info);
+          const od = await getOneDriveClient(context, info);
 
           // check for token
-          if (await od.getAccessToken(true)) {
+          const authResult = await od.auth.getAccessToken(true);
+          if (authResult) {
             const me = await od.me();
             log.info('installed user', me);
             info.me = me;
+            info.jwtPayload = decodeJwt(authResult.accessToken);
           } else {
             // get url to sign user in and consent to scopes needed for application
-            info.links.odLogin = await od.app.getAuthCodeUrl({
+            info.links.odLogin = await od.auth.app.getAuthCodeUrl({
               scopes: AZURE_SCOPES,
               redirectUri: getRedirectUrl(request, context, '/token'),
               responseMode: 'form_post',

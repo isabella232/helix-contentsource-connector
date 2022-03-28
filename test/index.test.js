@@ -15,9 +15,9 @@
 import assert from 'assert';
 import { encode } from 'querystring';
 import { Request } from '@adobe/helix-fetch';
+import { decrypt, encrypt } from '@adobe/helix-onedrive-support/src/cache/encrypt.js';
+import { MemCachePlugin } from '@adobe/helix-onedrive-support';
 import { Nock, filterProperties } from './utils.js';
-import { decrypt, encrypt } from '../src/encrypt.js';
-import MemCachePlugin from '../src/MemCachePlugin.js';
 import testAuth from './fixtures/test-auth.js';
 import { main } from '../src/index.js';
 
@@ -69,8 +69,8 @@ const RESP_AUTH_WELL_KNOWN = {
 
 const RESP_AUTH_DEFAULT = {
   token_type: 'Bearer',
-  refresh_token: 'dummy',
-  access_token: 'dummy',
+  refresh_token: 'dummy-refresh-token',
+  access_token: 'dummy-access-token',
   expires_in: 181000,
 };
 
@@ -162,7 +162,7 @@ describe('Index Tests (google)', () => {
   afterEach(() => {
     nock.done();
     delete process.env.AWS_EXECUTION_ENV;
-    MemCachePlugin.clear();
+    new MemCachePlugin({}).clear();
   });
 
   it('google mountpoint renders link', async () => {
@@ -216,8 +216,8 @@ describe('Index Tests (google)', () => {
     const data = decrypt('853bced1f82a05e9d27a8f63ecac59e70d9c14680dc5e417429f65e988f', cache).toString('utf-8');
     const json = filterProperties(JSON.parse(data), ['expiry_date', 'extended_expires_on', 'cached_at']);
     assert.deepStrictEqual(json, {
-      access_token: 'dummy',
-      refresh_token: 'dummy',
+      access_token: 'dummy-access-token',
+      refresh_token: 'dummy-refresh-token',
       token_type: 'Bearer',
     });
   });
@@ -302,7 +302,7 @@ describe('Index Tests (sharepoint)', () => {
   afterEach(() => {
     nock.done();
     delete process.env.AWS_EXECUTION_ENV;
-    MemCachePlugin.clear();
+    new MemCachePlugin({}).clear();
   });
 
   it('sharepoint github requires client id', async () => {
@@ -315,6 +315,11 @@ describe('Index Tests (sharepoint)', () => {
 
   it('sharepoint mountpoint renders link', async () => {
     nock.fstab(FSTAB_1D, 'owner', 'repo', 'main');
+    nock('https://login.windows.net')
+      .get('/adobe.onmicrosoft.com/.well-known/openid-configuration')
+      .reply(200, {
+        issuer: 'https://sts.windows.net/fa7b1b5a-7b34-4387-94ae-d2c178decee1/',
+      });
     nock('https://login.microsoftonline.com')
       .get('/common/discovery/instance?api-version=1.1&authorization_endpoint=https://login.windows.net/fa7b1b5a-7b34-4387-94ae-d2c178decee1/oauth2/v2.0/authorize')
       .reply(200, RESP_AUTH_DISCOVERY)
@@ -332,12 +337,17 @@ describe('Index Tests (sharepoint)', () => {
     const body = await resp.json();
     // console.log(body);
     assert.strictEqual(body.mp.url, 'https://adobe.sharepoint.com/sites/TheBlog/Shared%20Documents/theblog');
-    assert.match(body.links.odLogin, /https:\/\/login\.microsoftonline\.com\/fa7b1b5a-7b34-4387-94ae-d2c178decee1\/oauth2\/v2\.0\/authorize\?client_id=client-id&scope=user\.read%20openid%20profile%20offline_access&redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fregister%2Ftoken&client-request-id=[0-9a-f-]+&response_mode=form_post&response_type=code&x-client-SKU=msal\.js\.node&x-client-VER=1\.3\.3&x-client-OS=[^&]+&x-client-CPU=[^&]+&client_info=1&prompt=consent&state=a%2Fowner%2Frepo/);
+    assert.match(body.links.odLogin, /https:\/\/login\.microsoftonline\.com\/fa7b1b5a-7b34-4387-94ae-d2c178decee1\/oauth2\/v2\.0\/authorize\?client_id=client-id&scope=user\.read%20openid%20profile%20offline_access&redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fregister%2Ftoken&client-request-id=[0-9a-f-]+&response_mode=form_post&response_type=code&x-client-SKU=msal\.js\.node&x-client-VER=[^&]+&x-client-OS=[^&]+&x-client-CPU=[^&]+&client_info=1&prompt=consent&state=a%2Fowner%2Frepo/);
   });
 
   it('sharepoint token endpoint can receive token', async () => {
     let cache;
     nock.fstab(FSTAB_1D, 'owner', 'repo', 'main');
+    nock('https://login.windows.net')
+      .get('/adobe.onmicrosoft.com/.well-known/openid-configuration')
+      .reply(200, {
+        issuer: 'https://sts.windows.net/fa7b1b5a-7b34-4387-94ae-d2c178decee1/',
+      });
     nock('https://login.microsoftonline.com')
       .get('/common/discovery/instance?api-version=1.1&authorization_endpoint=https://login.windows.net/fa7b1b5a-7b34-4387-94ae-d2c178decee1/oauth2/v2.0/authorize')
       .reply(200, RESP_AUTH_DISCOVERY)
@@ -379,13 +389,13 @@ describe('Index Tests (sharepoint)', () => {
     const json = filterProperties(JSON.parse(data), ['expires_on', 'extended_expires_on', 'cached_at']);
     assert.deepStrictEqual(json, {
       AccessToken: {
-        '-login.windows.net-accesstoken-client-id-fa7b1b5a-7b34-4387-94ae-d2c178decee1-user.read openid profile offline_access': {
+        '-login.windows.net-accesstoken-client-id-fa7b1b5a-7b34-4387-94ae-d2c178decee1-user.read openid profile offline_access--': {
           client_id: 'client-id',
           credential_type: 'AccessToken',
           environment: 'login.windows.net',
           home_account_id: '',
           realm: 'fa7b1b5a-7b34-4387-94ae-d2c178decee1',
-          secret: 'dummy',
+          secret: 'dummy-access-token',
           target: 'user.read openid profile offline_access',
           token_type: 'Bearer',
         },
@@ -394,15 +404,18 @@ describe('Index Tests (sharepoint)', () => {
       AppMetadata: {},
       IdToken: {},
       RefreshToken: {
-        '-login.windows.net-refreshtoken-client-id--': {
+        '-login.windows.net-refreshtoken-client-id----': {
           client_id: 'client-id',
           credential_type: 'RefreshToken',
           environment: 'login.windows.net',
           home_account_id: '',
-          secret: 'dummy',
+          secret: 'dummy-refresh-token',
         },
       },
     });
+    new MemCachePlugin({}).clear();
+    nock.done();
+    nock = new Nock();
   });
 
   it('sharepoint token endpoint can disconnect', async () => {
@@ -413,6 +426,11 @@ describe('Index Tests (sharepoint)', () => {
 
     let cache;
     nock.fstab(FSTAB_1D, 'owner', 'repo', 'main');
+    nock('https://login.windows.net')
+      .get('/adobe.onmicrosoft.com/.well-known/openid-configuration')
+      .reply(200, {
+        issuer: 'https://sts.windows.net/fa7b1b5a-7b34-4387-94ae-d2c178decee1/',
+      });
     nock('https://helix-content-bus.s3.us-east-1.amazonaws.com')
       .get('/9b08ed882cc3217ceb23a3e71d769dbe47576312869465a0a302ed29c6d/.helix-auth?x-id=GetObject')
       .reply(200, authData, {
@@ -435,12 +453,13 @@ describe('Index Tests (sharepoint)', () => {
 
     const data = decrypt('9b08ed882cc3217ceb23a3e71d769dbe47576312869465a0a302ed29c6d', cache).toString('utf-8');
     const json = filterProperties(JSON.parse(data), ['expiry_date', 'extended_expires_on', 'cached_at']);
+    // the access and refresh tokens remain after the account removal
+    delete json.AccessToken;
+    delete json.RefreshToken;
     assert.deepStrictEqual(json, {
-      AccessToken: {},
       Account: {},
       AppMetadata: {},
       IdToken: {},
-      RefreshToken: {},
     });
   });
 
@@ -451,6 +470,11 @@ describe('Index Tests (sharepoint)', () => {
     );
 
     nock.fstab(FSTAB_1D, 'owner', 'repo', 'main');
+    nock('https://login.windows.net')
+      .get('/adobe.onmicrosoft.com/.well-known/openid-configuration')
+      .reply(200, {
+        issuer: 'https://sts.windows.net/fa7b1b5a-7b34-4387-94ae-d2c178decee1/',
+      });
     nock('https://login.microsoftonline.com')
       .get('/common/discovery/instance?api-version=1.1&authorization_endpoint=https://login.windows.net/fa7b1b5a-7b34-4387-94ae-d2c178decee1/oauth2/v2.0/authorize')
       .times(3)

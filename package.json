@@ -62,6 +62,7 @@
     "@aws-sdk/client-s3": "3.56.0",
     "ejs": "3.1.6",
     "googleapis": "97.0.0",
+    "jose": "4.6.0",
     "mime": "3.0.0"
   },
   "devDependencies": {

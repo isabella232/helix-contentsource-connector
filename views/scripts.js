@@ -43,6 +43,7 @@ function showInfo(data) {
     document.getElementById('info-mp').href = data.mp.url;
     document.getElementById('info-mp').textContent = data.mp.url;
     document.getElementById('info-contentBusId').textContent = data.contentBusId;
+    document.getElementById('info-tenantId').textContent = data.tenantId;
   }
 }
 
@@ -54,6 +55,8 @@ function showConnected(data) {
     document.getElementById('me-displayName').textContent = data.me.displayName;
     document.getElementById('me-mail').href = `mailto:${data.me.mail}`;
     document.getElementById('me-mail').textContent = data.me.mail;
+    document.getElementById('info-idp').textContent = data.jwtPayload?.idp;
+    document.getElementById('info-issuer').textContent = data.jwtPayload?.iss;
     document.getElementById('btn-disconnect').data = `${data.owner}/${data.repo}/${data.me.id}`;
   }
 }
@@ -92,7 +95,7 @@ async function loadInfo(owner, repo) {
   }
   window.history.pushState({}, 'foo', `${links.connect}/${owner}/${repo}`);
   const data = JSON.parse(await resp.text());
-  console.log(data);
+  // console.log(data);
   showError(data.error);
   if (data.error) {
     showInfo();
