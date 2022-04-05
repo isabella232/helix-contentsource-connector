@@ -47,17 +47,43 @@ function showInfo(data) {
   }
 }
 
-function showConnected(data) {
+function showUserList(data) {
   if (!data) {
-    document.getElementById('connected').classList.add('hidden');
+    document.getElementById('user-list-panel').classList.add('hidden');
   } else {
-    document.getElementById('connected').classList.remove('hidden');
-    document.getElementById('me-displayName').textContent = data.me.displayName;
-    document.getElementById('me-mail').href = `mailto:${data.me.mail}`;
-    document.getElementById('me-mail').textContent = data.me.mail;
-    document.getElementById('info-idp').textContent = data.jwtPayload?.idp;
-    document.getElementById('info-issuer').textContent = data.jwtPayload?.iss;
-    document.getElementById('btn-disconnect').data = `${data.owner}/${data.repo}/${data.me.id}`;
+    document.getElementById('user-list-panel').classList.remove('hidden');
+    const $last = document.getElementById('add-user');
+    const $connected = document.getElementById('connected-user');
+    const $ul = document.getElementById('user-list');
+    $ul.querySelectorAll('li.user').forEach((el) => el.remove());
+    $connected.classList.add('hidden');
+    (data.users || []).forEach(({ name, url }) => {
+      const $li = document.createElement('li');
+      $li.classList.add('user');
+      if (name === data.user) {
+        document.getElementById('btn-disconnect').dataset.info = `${data.owner}/${data.repo}/${data.user}`;
+        const $heading = document.createElement('h4');
+        $heading.innerText = name;
+        $li.append($heading);
+        $li.append($connected);
+        $connected.classList.remove('hidden');
+      } else {
+        const $a = document.createElement('a');
+        $a.href = url;
+        $a.innerText = name;
+        $li.append($a);
+      }
+      $ul.insertBefore($li, $last);
+    });
+    if (data.me) {
+      document.getElementById('me-displayName').textContent = data.me.displayName;
+      document.getElementById('me-mail').href = `mailto:${data.me.mail}`;
+      document.getElementById('me-mail').textContent = data.me.mail;
+      document.getElementById('info-idp').textContent = data.jwtPayload?.idp;
+      document.getElementById('info-issuer').textContent = data.jwtPayload?.iss;
+    }
+    document.getElementById('btn-add-user').textContent = `Add ${data.mp.type} user`;
+    document.getElementById('btn-add-user').dataset.url = data.links.login;
   }
 }
 
@@ -69,70 +95,41 @@ function showGithubForm(show) {
   }
 }
 
-function showOnedriveConnect(data) {
-  if (data) {
-    document.getElementById('connect-onedrive').classList.remove('hidden');
-    document.getElementById('login-onedrive').href = data.links.odLogin;
-  } else {
-    document.getElementById('connect-onedrive').classList.add('hidden');
-  }
-}
-
-function showGoogleConnect(data) {
-  if (data) {
-    document.getElementById('connect-google').classList.remove('hidden');
-    document.getElementById('login-google').href = data.links.gdLogin;
-  } else {
-    document.getElementById('connect-google').classList.add('hidden');
-  }
-}
-
-async function loadInfo(owner, repo) {
-  const infoUrl = `${links.info}/${owner}/${repo}`;
+async function loadInfo(owner, repo, user) {
+  const segUser = user ? `/${user}` : '';
+  const infoUrl = `${links.info}/${owner}/${repo}${segUser}`;
   const resp = await fetch(infoUrl);
   if (!resp.ok) {
     return false;
   }
-  window.history.pushState({}, 'foo', `${links.connect}/${owner}/${repo}`);
+  window.history.pushState({}, 'foo', `${links.connect}/${owner}/${repo}${segUser}`);
   const data = JSON.parse(await resp.text());
   // console.log(data);
   showError(data.error);
   if (data.error) {
     showInfo();
     showGithubForm(true);
-    showOnedriveConnect();
-    showGoogleConnect();
-    showConnected();
+    // showOnedriveConnect();
+    // showGoogleConnect();
+    showUserList();
   } else {
     showInfo(data);
     showGithubForm(false);
-    if (data.me) {
-      showConnected(data);
-      showOnedriveConnect();
-      showGoogleConnect();
-    } else {
-      showConnected();
-      if (data.mp.type === 'onedrive') {
-        showOnedriveConnect(data);
-      }
-      if (data.mp.type === 'google') {
-        showGoogleConnect(data);
-      }
-    }
+    showUserList(data);
   }
   return false;
 }
 
 async function disconnect(evt) {
-  const { data } = evt.target;
-  if (!data) {
+  const { info } = evt.target.dataset;
+  if (!info) {
     return false;
   }
   // eslint-disable-next-line no-param-reassign
   evt.target.disabled = true;
   try {
-    const [owner, repo, id] = data.split('/');
-    const url = `${links.disconnect}/${owner}/${repo}/${id}`;
+    const [owner, repo, user] = info.split('/');
+    const url = `${links.disconnect}/${owner}/${repo}/${user}`;
     const resp = await fetch(url, {
       method: 'POST',
     });
@@ -158,28 +155,43 @@ async function githubForm() {
   }
 }
 
+async function addUser(evt) {
+  const user = document.getElementById('user-name').value;
+  if (!user) {
+    alert('please specify user label');
+    return;
+  }
+  if (user.indexOf('/') >= 0) {
+    alert('user label must not have \'/\'');
+    return;
+  }
+  const url = new URL(evt.target.dataset.url);
+  const state = url.searchParams.get('state');
+  url.searchParams.set('state', `${state}/${user}`);
+  window.location.href = url.href;
+}
+
 async function init() {
   const segs = window.location.pathname.split('/');
-  const [route, owner, repo] = segs.splice(-3);
+  const idx = segs.indexOf('connect');
+  const [route, owner, repo, user] = segs.splice(idx, 4);
   if (route === 'connect' && owner && repo) {
     showLoading(true);
     try {
-      await loadInfo(owner, repo);
+      await loadInfo(owner, repo, user);
     } finally {
       showLoading(false);
     }
   } else {
     showGithubForm(true);
     showInfo();
-    showOnedriveConnect();
-    showGoogleConnect();
     showError();
-    showConnected();
   }
 }
 
 function registerHandlers() {
   document.getElementById('btn-connect').addEventListener('click', githubForm);
+  document.getElementById('btn-add-user').addEventListener('click', addUser);
   document.getElementById('btn-disconnect').addEventListener('click', disconnect);
   window.addEventListener('popstate', init);
 }
