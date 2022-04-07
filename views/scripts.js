@@ -57,6 +57,12 @@ function showUserList(data) {
     const $ul = document.getElementById('user-list');
     $ul.querySelectorAll('li.user').forEach((el) => el.remove());
     $connected.classList.add('hidden');
+    const opts = {};
+    document.querySelectorAll('#user-name > option').forEach(($el) => {
+      // eslint-disable-next-line no-param-reassign
+      $el.disabled = false;
+      opts[$el.value] = $el;
+    });
     (data.users || []).forEach(({ name, url }) => {
       const $li = document.createElement('li');
       $li.classList.add('user');
@@ -74,13 +80,24 @@ function showUserList(data) {
         $li.append($a);
       }
       $ul.insertBefore($li, $last);
+      opts[name].disabled = true;
+      delete opts[name];
     });
-    if (data.me) {
-      document.getElementById('me-displayName').textContent = data.me.displayName;
-      document.getElementById('me-mail').href = `mailto:${data.me.mail}`;
-      document.getElementById('me-mail').textContent = data.me.mail;
-      document.getElementById('info-idp').textContent = data.jwtPayload?.idp;
-      document.getElementById('info-issuer').textContent = data.jwtPayload?.iss;
+    if (Object.keys(opts).length === 0) {
+      document.getElementById('user-name').disabled = true;
+      document.getElementById('btn-add-user').disabled = true;
+    } else {
+      document.getElementById('user-name').disabled = false;
+      document.getElementById('btn-add-user').disabled = false;
+      // eslint-disable-next-line prefer-destructuring
+      document.getElementById('user-name').value = Object.keys(opts)[0];
+    }
+    if (data.profile) {
+      document.getElementById('me-displayName').textContent = data.profile.name;
+      document.getElementById('me-mail').href = `mailto:${data.profile.username}`;
+      document.getElementById('me-mail').textContent = data.profile.username;
+      document.getElementById('info-idp').textContent = data.profile.idp;
+      document.getElementById('info-issuer').textContent = data.profile.iss;
     }
     document.getElementById('btn-add-user').textContent = `Add ${data.mp.type} user`;
     document.getElementById('btn-add-user').dataset.url = data.links.login;

@@ -27,7 +27,8 @@ export default class GoogleClient {
       opts.clientSecret,
       opts.redirectUri,
     );
-    this.cache = new GoogleTokenCache(opts.plugin).withLog(opts.log);
+    this.cachePlugin = opts.cachePlugin;
+    this.cache = new GoogleTokenCache(opts.cachePlugin).withLog(opts.log);
 
     /// hack to capture tokens, since the emit handler is not awaited in the google client
     const originalRefreshTokenNoCache = this.client.refreshTokenNoCache.bind(this.client);
