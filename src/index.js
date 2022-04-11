@@ -84,8 +84,10 @@ function getRedirectUrl(req, ctx, path) {
 
 async function getCachePlugin(context, opts) {
   const { log } = context;
-  const { user, contentBusId, cacheManager } = opts;
-  const key = `${contentBusId}/${user}`;
+  const {
+    user, contentBusId, cacheManager, repo,
+  } = opts;
+  const key = `${contentBusId}/${repo}/${user}`;
   const base = await cacheManager.getCache(user);
   return new MemCachePlugin({ log, key, base });
 }
@@ -152,23 +154,39 @@ async function getProjectInfo(request, ctx, { owner, repo, user }) {
   let cacheManager;
 
   if (owner && repo) {
-    try {
-      const fstab = await fetchFstab(ctx, {
-        owner,
-        repo,
-        ref: 'main',
-      });
-      [mp] = fstab.mountpoints;
+    if (owner === 'default' && repo === 'onedrive') {
+      // workaround to register default onedrive user
+      contentBusId = 'default';
+      mp = {
+        type: 'onedrive',
+        url: 'https://adobe.sharepoint.com/',
+      };
+    } else if (owner === 'default' && repo === 'google') {
+      // workaround to register default onedrive user
+      contentBusId = 'default';
+      mp = {
+        type: 'google',
+        url: 'https://adobe.sharepoint.com/',
+      };
+    } else {
+      try {
+        const fstab = await fetchFstab(ctx, {
+          owner,
+          repo,
+          ref: 'main',
+        });
+        [mp] = fstab.mountpoints;
 
-      const sha256 = crypto
-        .createHash('sha256')
-        .update(mp.url)
-        .digest('hex');
-      contentBusId = `${sha256.substr(0, 59)}`;
-      githubUrl = `https://github.com/${owner}/${repo}`;
-    } catch (e) {
-      ctx.log.error('error fetching fstab:', e);
-      error = e.message;
+        const sha256 = crypto
+          .createHash('sha256')
+          .update(mp.url)
+          .digest('hex');
+        contentBusId = `${sha256.substr(0, 59)}`;
+        githubUrl = `https://github.com/${owner}/${repo}`;
+      } catch (e) {
+        ctx.log.error('error fetching fstab:', e);
+        error = e.message;
+      }
     }
 
     cacheManager = process.env.AWS_EXECUTION_ENV
@@ -341,6 +359,7 @@ async function run(request, context) {
           if (user) {
             // check for token
             const authResult = await od.authenticate(true);
+            // console.log(authResult);
             if (authResult) {
               info.profile = {
                 name: authResult.account.name,
@@ -372,6 +391,7 @@ async function run(request, context) {
                 username: mail,
                 idp: hd,
                 iss: '',
+                scopes: GOOGLE_SCOPES,
               };
             } catch (e) {
               // ignore

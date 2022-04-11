@@ -98,6 +98,7 @@ function showUserList(data) {
       document.getElementById('me-mail').textContent = data.profile.username;
       document.getElementById('info-idp').textContent = data.profile.idp;
       document.getElementById('info-issuer').textContent = data.profile.iss;
+      document.getElementById('info-scopes').textContent = data.profile.scopes;
     }
     document.getElementById('btn-add-user').textContent = `Add ${data.mp.type} user`;
     document.getElementById('btn-add-user').dataset.url = data.links.login;
