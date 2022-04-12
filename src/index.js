@@ -128,8 +128,8 @@ async function getGoogleClient(req, context, opts) {
 
     context.gc = await new GoogleClient({
       log,
-      clientId: env.GOOGLE_HELIX_CLIENT_ID,
-      clientSecret: env.GOOGLE_HELIX_CLIENT_SECRET,
+      clientId: env.GOOGLE_DOCS2MD_CLIENT_ID,
+      clientSecret: env.GOOGLE_DOCS2MD_CLIENT_SECRET,
       redirectUri: getRedirectUrl(req, context, '/token'),
       cachePlugin,
     }).init();
