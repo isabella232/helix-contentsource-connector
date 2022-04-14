@@ -17,6 +17,7 @@ import mime from 'mime';
 import {
   MemCachePlugin, OneDriveAuth, FSCacheManager, S3CacheManager,
 } from '@adobe/helix-onedrive-support';
+import { GoogleClient } from '@adobe/helix-google-support';
 import { google } from 'googleapis';
 import wrap from '@adobe/helix-shared-wrap';
 import bodyData from '@adobe/helix-shared-body-data';
@@ -25,7 +26,6 @@ import { wrap as status } from '@adobe/helix-status';
 import { Response } from '@adobe/helix-fetch';
 import pkgJson from './package.cjs';
 import fetchFstab from './fetch-fstab.js';
-import GoogleClient from './GoogleClient.js';
 
 const ROOT_PATH = '/register';
 
@@ -87,6 +87,9 @@ async function getCachePlugin(context, opts) {
   const {
     user, contentBusId, cacheManager, repo,
   } = opts;
+  if (!user) {
+    return null;
+  }
   const key = `${contentBusId}/${repo}/${user}`;
   const base = await cacheManager.getCache(user);
   return new MemCachePlugin({ log, key, base });
@@ -195,16 +198,16 @@ async function getProjectInfo(request, ctx, { owner, repo, user }) {
         prefix: `${contentBusId}/.helix-auth`,
         secret: contentBusId,
         bucket: 'helix-content-bus',
-        type: mp.type,
+        type: mp?.type,
       })
       : new FSCacheManager({
         log: ctx.log,
         dirPath: `.auth-${contentBusId}--${owner}--${repo}`,
-        type: mp.type,
+        type: mp?.type,
       });
   }
 
-  return {
+  const ret = {
     owner,
     repo,
     user,
@@ -214,7 +217,6 @@ async function getProjectInfo(request, ctx, { owner, repo, user }) {
     tenantId: '',
     error,
     version: pkgJson.version,
-    cacheManager,
     links: {
       helixHome: 'https://www.hlx.live/',
       disconnect: getRedirectUrl(request, ctx, '/disconnect'),
@@ -225,6 +227,10 @@ async function getProjectInfo(request, ctx, { owner, repo, user }) {
       styles: getRedirectUrl(request, ctx, '/styles.css'),
     },
   };
+  return Object.defineProperty(ret, 'cacheManager', {
+    value: cacheManager,
+    enumerable: false,
+  });
 }
 
 async function serveStatic(path) {
